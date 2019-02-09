@@ -10,6 +10,13 @@ module Main (S: Mirage_types_lwt.STACKV4) = struct
 
   let iperf_port = 5001
 
+  let print_stats prefix stat =
+    Logs.info (fun m -> m "gc %s minor words %f promoted words %f major words %f@.minor collections %d major collections %d heap_words %d heap chunks %d@.compactions %d top heap words %d stack size %d"
+                  prefix stat.Gc.minor_words stat.Gc.promoted_words stat.Gc.major_words
+                  stat.Gc.minor_collections stat.Gc.major_collections stat.Gc.heap_words
+                  stat.Gc.heap_chunks stat.Gc.compactions stat.Gc.top_heap_words
+                  stat.Gc.stack_size)
+
   let print_data st ts_now =
     let duration = Int64.sub ts_now st.start_time in
     let rate = (Int64.float_of_bits st.bytes) /. (Int64.float_of_bits duration) *. 1000. *. 1000. *. 1000. in
@@ -17,6 +24,11 @@ module Main (S: Mirage_types_lwt.STACKV4) = struct
     Logs.info (fun f -> f  "iperf server: Throughput = %.2f [MBs/sec]"  (rate /. 1000000.));
     st.last_time <- ts_now;
     st.bytes <- 0L;
+    let stat_before = Gc.quick_stat () in
+    print_stats "before" stat_before ;
+    Gc.full_major ();
+    let stat_after = Gc.quick_stat () in
+    print_stats "after" stat_after ;
     Lwt.return_unit
 
   let iperf clock flow =
