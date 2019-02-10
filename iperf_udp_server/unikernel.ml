@@ -27,13 +27,17 @@ type stats = {
 
 module Main (S: Mirage_types_lwt.STACKV4) = struct
 
-  let server_port = 5001
-
   let start_id = Int32.of_int 0
 
   (* packet sending *)
   let write_and_check ip port udp buf =
-    S.UDPV4.write ~src_port:server_port ~dst:ip ~dst_port:port udp buf >|= Rresult.R.get_ok
+    S.UDPV4.write ~dst:ip ~dst_port:port udp buf >|= Rresult.R.get_ok
+
+  let print_cstruct_stats () =
+    Logs.info (fun m -> m "cstruct stats %a" Cstruct.pp_stat (Cstruct.get_stat ()))
+
+  let print_iopage_stats () =
+    Logs.info (fun m -> m "iopage stats %a" Io_page.pp_stat (Io_page.get_stat ()))
 
   (* main server function *)
   let iperf clock s src_ip src_port st buf =
@@ -57,6 +61,8 @@ module Main (S: Mirage_types_lwt.STACKV4) = struct
       let time_usec = Int64.div (Int64.sub elapsed time_sec) 1000000L in
       Logs.info (fun f -> f "iperf_udp_server: Stopped. %.0Lu bytes received." st.bytes);
       Logs.info (fun f -> f "iperf_udp_server: %.0Lu [ns] elapsed" elapsed);
+      print_cstruct_stats ();
+      print_iopage_stats ();
 
       (* C-based iperf compatibility *)
       let response = Cstruct.create 1470 in
@@ -72,7 +78,7 @@ module Main (S: Mirage_types_lwt.STACKV4) = struct
       Lwt.return_unit
     end
     (* usual packet receiving *)
-    else 
+    else
     begin
       st.bytes <- (Int64.add st.bytes (Int64.of_int l));
       Lwt.return_unit
@@ -80,18 +86,18 @@ module Main (S: Mirage_types_lwt.STACKV4) = struct
 
   let start s =
     let ips = List.map Ipaddr.V4.to_string (S.IPV4.get_ip (S.ipv4 s)) in
+    let port = Key_gen.port () in
     (* debug is too much for us here *)
-    Logs.set_level ~all:true (Some Logs.Info);
     Logs.info (fun f -> f "iperf_udp_server: process started:");
     Logs.info (fun f -> f "iperf_udp_server: IP address: %s" (String.concat "," ips));
-    Logs.info (fun f -> f "iperf_udp_server: Port number: %d" server_port);
+    Logs.info (fun f -> f "iperf_udp_server: Port number: %d" port);
 
     let st = {
       bytes=0L; start_time=0L; end_time=0L
     } in
 
     Mclock.connect () >>= fun clock ->
-    S.listen_udpv4 s ~port:server_port (fun ~src ~dst ~src_port buf ->
+    S.listen_udpv4 s ~port (fun ~src ~dst ~src_port buf ->
       iperf clock s src src_port st buf
     );
     S.listen s

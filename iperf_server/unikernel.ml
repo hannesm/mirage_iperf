@@ -8,14 +8,18 @@ type stats = {
 
 module Main (S: Mirage_types_lwt.STACKV4) = struct
 
-  let iperf_port = 5001
-
   let print_stats prefix stat =
     Logs.info (fun m -> m "gc %s minor words %f promoted words %f major words %f@.minor collections %d major collections %d heap_words %d heap chunks %d@.compactions %d top heap words %d stack size %d"
                   prefix stat.Gc.minor_words stat.Gc.promoted_words stat.Gc.major_words
                   stat.Gc.minor_collections stat.Gc.major_collections stat.Gc.heap_words
                   stat.Gc.heap_chunks stat.Gc.compactions stat.Gc.top_heap_words
                   stat.Gc.stack_size)
+
+  let print_cstruct_stats () =
+    Logs.info (fun m -> m "cstruct stats %a" Cstruct.pp_stat (Cstruct.get_stat ()))
+
+  let print_iopage_stats () =
+    Logs.info (fun m -> m "iopage stats %a" Io_page.pp_stat (Io_page.get_stat ()))
 
   let print_data st ts_now =
     let duration = Int64.sub ts_now st.start_time in
@@ -29,6 +33,8 @@ module Main (S: Mirage_types_lwt.STACKV4) = struct
     Gc.full_major ();
     let stat_after = Gc.quick_stat () in
     print_stats "after" stat_after ;
+    print_cstruct_stats () ;
+    print_iopage_stats () ;
     Lwt.return_unit
 
   let iperf clock flow =
@@ -60,14 +66,13 @@ module Main (S: Mirage_types_lwt.STACKV4) = struct
 
  let start s =
    let ips = List.map Ipaddr.V4.to_string (S.IPV4.get_ip (S.ipv4 s)) in
+   let port = Key_gen.port () in
    Logs.info (fun f -> f "iperf server process started:");
    Logs.info (fun f -> f "IP address: %s" (String.concat "," ips));
-   Logs.info (fun f -> f "Port number: %d" iperf_port);
+   Logs.info (fun f -> f "Port number: %d" port);
 
    Mclock.connect () >>= fun clock ->
-   S.listen_tcpv4 s ~port:iperf_port (fun flow ->
-     iperf clock flow
-   );
+   S.listen_tcpv4 s ~port (iperf clock);
    S.listen s
 
 end
